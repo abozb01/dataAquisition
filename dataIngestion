@@ -1,0 +1,56 @@
+import os
+import pandas as pd
+import requests
+from sqlalchemy import create_engine
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+
+# Configuration
+csv_source = 'data/source_data.csv'
+api_url = 'https://api.example.com/data'
+database_url = 'sqlite:///source_data.db'
+container_name = 'analytics-data'
+blob_service_client = BlobServiceClient.from_connection_string('YourAzureBlobStorageConnectionString')
+
+# Function to ingest data from CSV
+def ingest_csv_data(csv_source):
+    df = pd.read_csv(csv_source)
+    return df
+
+# Function to ingest data from API
+def ingest_api_data(api_url):
+    response = requests.get(api_url)
+    data = response.json()
+    df = pd.DataFrame(data)
+    return df
+
+# Function to ingest data from SQL database
+def ingest_sql_data(database_url):
+    engine = create_engine(database_url)
+    df = pd.read_sql('SELECT * FROM source_table', engine)
+    return df
+
+# Function to save data to Azure Blob Storage
+def save_to_blob_storage(df, container_name, file_name):
+    container_client = blob_service_client.get_container_client(container_name)
+    if not container_client.exists():
+        container_client.create_container()
+    
+    blob_client = container_client.get_blob_client(file_name)
+    df.to_csv('temp_data.csv', index=False)
+    
+    with open('temp_data.csv', 'rb') as data:
+        blob_client.upload_blob(data, overwrite=True)
+    
+    os.remove('temp_data.csv')
+    print(f"Data saved to Azure Blob Storage as {file_name}")
+
+# Ingest data from all sources
+csv_data = ingest_csv_data(csv_source)
+api_data = ingest_api_data(api_url)
+sql_data = ingest_sql_data(database_url)
+
+# Combine all data into a single DataFrame
+combined_data = pd.concat([csv_data, api_data, sql_data], ignore_index=True)
+
+# Save combined data to Azure Blob Storage
+save_to_blob_storage(combined_data, container_name, 'combined_data.csv')
